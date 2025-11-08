@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<!-- ... (head 和 style 部分与上一版完全相同，此处省略以节省空间) ... -->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图片智能超分</title>
+    <style>
+        :root {
+            --bg-color: #f8f9fa;
+            --panel-color: #ffffff;
+            --text-color: #343a40;
+            --border-color: #dee2e6;
+            --accent-color: #28a745;
+            --accent-hover-color: #218838;
+            --progress-bg-color: #e9ecef;
+            --muted-text-color: #6c757d;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .main-container {
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+            background: var(--panel-color);
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+            overflow: hidden;
+        }
+        header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            text-align: center;
+        }
+        h1 { margin: 0; font-size: 1.75rem; }
+        .content-wrapper {
+            display: flex;
+            flex-wrap: wrap;
+        }
+        .image-panel {
+            flex: 1;
+            min-width: 300px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .image-panel:first-child { border-right: 1px solid var(--border-color); }
+        .image-placeholder {
+            width: 100%;
+            height: 400px;
+            border: 2px dashed var(--border-color);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background-color 0.3s, border-color 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+        .image-placeholder:hover { background-color: #f1f3f5; border-color: var(--accent-color); }
+        .image-placeholder img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            border-radius: 6px;
+        }
+        .image-placeholder .text { color: var(--muted-text-color); padding: 1rem; }
+        .panel-footer {
+            width: 100%;
+            margin-top: 1rem;
+            text-align: center;
+        }
+        .file-name {
+            color: var(--muted-text-color);
+            font-size: 0.9rem;
+            word-break: break-all;
+            margin-bottom: 1rem;
+        }
+        .action-button {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            padding: 0.7rem 1.2rem;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .action-button:hover { background-color: #5a6268; }
+        #exportButton { background-color: var(--accent-color); }
+        #exportButton:hover { background-color: var(--accent-hover-color); }
+
+        .controls-panel {
+            width: 100%;
+            padding: 1.5rem;
+            border-top: 1px solid var(--border-color);
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            align-items: center;
+        }
+        .control-group { display: flex; flex-direction: column; }
+        .control-group label { margin-bottom: 0.5rem; font-weight: 500; }
+        .control-group select, .control-group input {
+            width: 100%;
+            padding: 0.6rem;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            font-size: 1rem;
+        }
+        .control-group-checkbox { flex-direction: row; align-items: center; gap: 0.5rem; user-select: none; }
+
+        #action-area { grid-column: 1 / -1; margin-top: 1rem; }
+        .main-button {
+            width: 100%;
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 1rem;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .main-button:disabled { background-color: #adb5bd; cursor: not-allowed; }
+
+        #status-area { width: 100%; text-align: center; }
+        #status-text { display: block; margin-bottom: 0.75rem; font-weight: 500; }
+        .progress-container { width: 100%; height: 12px; background-color: var(--progress-bg-color); border-radius: 6px; overflow: hidden; }
+        .progress-bar { width: 100%; height: 100%; background-color: var(--accent-color); background-image: linear-gradient(45deg, rgba(255, 255, 255, .15) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, .15) 50%, rgba(255, 255, 255, .15) 75%, transparent 75%, transparent); background-size: 40px 40px; animation: progress-bar-stripes 1s linear infinite; }
+
+        .hidden { display: none; }
+        @keyframes progress-bar-stripes { from { background-position: 40px 0; } to { background-position: 0 0; } }
+        @media (max-width: 768px) {
+            body { padding: 0.5rem; }
+            .content-wrapper { flex-direction: column; }
+            .image-panel:first-child { border-right: none; border-bottom: 1px solid var(--border-color); }
+        }
+    </style>
+</head>
+<body>
+<!-- ... (HTML body 部分与上一版完全相同，此处省略) ... -->
+<div class="main-container">
+    <header><h1>图片智能超分</h1></header>
+
+    <div class="content-wrapper">
+        <div class="image-panel">
+            <div id="upload-placeholder" class="image-placeholder">
+                <img id="originalImage" src="" alt="Original Image" class="hidden">
+                <span class="text">点击或拖拽图片到此区域</span>
+            </div>
+            <div class="panel-footer">
+                <p id="fileName" class="file-name hidden"></p>
+                <input type="file" id="fileInput" accept="image/*" hidden>
+                <button id="importButton" class="action-button">选择图片</button>
+            </div>
+        </div>
+        <div class="image-panel">
+            <div id="result-placeholder" class="image-placeholder">
+                <img id="resultImage" src="" alt="Upscaled Image" class="hidden">
+                <span class="text">处理结果将在此显示</span>
+            </div>
+            <div class="panel-footer">
+                <a href="#" id="exportButton" class="action-button hidden" download>下载处理结果</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls-panel">
+        <div class="control-group">
+            <label for="modelSelect">选择模型</label>
+            <select id="modelSelect"></select>
+        </div>
+        <div class="control-group">
+            <label for="outscaleSlider">缩放倍数: <span id="outscaleValue">4.0</span>x</label>
+            <input type="range" id="outscaleSlider" min="1" max="8" step="0.1" value="4">
+        </div>
+        <div class="control-group">
+            <label class="control-group-checkbox">
+                <input type="checkbox" id="faceEnhanceCheckbox">
+                人脸/头像增强 (GFPGAN)
+            </label>
+        </div>
+
+        <div id="action-area">
+            <div id="status-area" class="hidden">
+                <span id="status-text"></span>
+                <div class="progress-container"><div class="progress-bar"></div></div>
+            </div>
+            <button id="processButton" class="main-button" disabled>请先上传图片</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const fileInput = document.getElementById('fileInput');
+        const uploadPlaceholder = document.getElementById('upload-placeholder');
+        const resultPlaceholder = document.getElementById('result-placeholder');
+        const originalImage = document.getElementById('originalImage');
+        const resultImage = document.getElementById('resultImage');
+        const processButton = document.getElementById('processButton');
+        const modelSelect = document.getElementById('modelSelect');
+        const outscaleSlider = document.getElementById('outscaleSlider');
+        const outscaleValue = document.getElementById('outscaleValue');
+        const faceEnhanceCheckbox = document.getElementById('faceEnhanceCheckbox');
+        const statusArea = document.getElementById('status-area');
+        const statusText = document.getElementById('status-text');
+        const importButton = document.getElementById('importButton');
+        const exportButton = document.getElementById('exportButton');
+        const fileNameDisplay = document.getElementById('fileName');
+
+        let currentFile = null;
+
+        // ... (获取模型列表逻辑)
+        fetch('/models')
+            .then(response => response.json())
+            .then(models => {
+                if(models && models.length > 0){
+                    models.forEach(model => {
+                        const option = new Option(model, model);
+                        if (model === 'RealESRGAN_x4plus') option.selected = true;
+                        modelSelect.appendChild(option);
+                    });
+                } else {
+                    modelSelect.innerHTML = '<option>未找到模型</option>';
+                    modelSelect.disabled = true;
+                }
+            }).catch(err => console.error("Failed to fetch models:", err));
+
+        // 绑定事件
+        uploadPlaceholder.addEventListener('click', () => fileInput.click());
+        importButton.addEventListener('click', () => fileInput.click());
+        uploadPlaceholder.addEventListener('dragover', (e) => e.preventDefault());
+        uploadPlaceholder.addEventListener('drop', (e) => {
+            e.preventDefault();
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                handleFileSelect({ target: fileInput });
+            }
+        });
+        fileInput.addEventListener('change', handleFileSelect);
+        outscaleSlider.addEventListener('input', () => {
+            outscaleValue.textContent = parseFloat(outscaleSlider.value).toFixed(1);
+        });
+        processButton.addEventListener('click', handleProcess);
+
+        function handleFileSelect(event) {
+            currentFile = event.target.files[0];
+            if (currentFile) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    originalImage.src = e.target.result;
+                    originalImage.classList.remove('hidden');
+                    uploadPlaceholder.querySelector('.text').classList.add('hidden');
+                    fileNameDisplay.textContent = `已选择: ${currentFile.name}`;
+                    fileNameDisplay.classList.remove('hidden');
+                    resultImage.classList.add('hidden');
+                    resultPlaceholder.querySelector('.text').classList.remove('hidden');
+                    exportButton.classList.add('hidden');
+                    processButton.disabled = false;
+                    processButton.textContent = '开始处理';
+                };
+                reader.readAsDataURL(currentFile);
+            }
+        }
+
+        async function handleProcess() {
+            if (!currentFile) { return; }
+
+            processButton.classList.add('hidden');
+            statusArea.classList.remove('hidden');
+            statusText.textContent = '服务器正在处理中，请稍候...';
+            exportButton.classList.add('hidden');
+
+            const formData = new FormData();
+            formData.append('file', currentFile);
+            formData.append('model', modelSelect.value);
+            formData.append('outscale', outscaleSlider.value);
+            formData.append('face_enhance', faceEnhanceCheckbox.checked);
+
+            try {
+                const response = await fetch('/upscale', { method: 'POST', body: formData });
+                if (response.ok) {
+                    const imageBlob = await response.blob();
+                    const resultUrl = URL.createObjectURL(imageBlob);
+
+                    resultImage.src = resultUrl;
+                    resultImage.classList.remove('hidden');
+                    resultPlaceholder.querySelector('.text').classList.add('hidden');
+
+                    // #######################################################
+                    // ############  核心逻辑修正 (文件名) #####################
+                    // #######################################################
+                    exportButton.href = resultUrl;
+
+                    // 1. 获取所有参数
+                    const name = currentFile.name.split('.').slice(0, -1).join('.') || 'download';
+                    const ext = currentFile.name.split('.').pop();
+                    const model = modelSelect.value;
+                    const scale = parseFloat(outscaleSlider.value).toFixed(1).replace('.', '_');
+                    const face = faceEnhanceCheckbox.checked ? '_face' : '';
+
+                    // 2. 构造与后端一致的、信息丰富的文件名
+                    exportButton.download = `${name}_${model}_s${scale}${face}.${ext}`;
+
+                    exportButton.classList.remove('hidden');
+                } else {
+                    const errorText = await response.text();
+                    alert(`处理失败: ${errorText}`);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('请求失败，请检查后端服务是否正常。');
+            } finally {
+                statusArea.classList.add('hidden');
+                processButton.classList.remove('hidden');
+            }
+        }
+    });
+</script>
+
+</body>
+</html>```
+
