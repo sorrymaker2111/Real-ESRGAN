@@ -22,8 +22,8 @@ class RealESRNetModel(SRModel):
 
     def __init__(self, opt):
         super(RealESRNetModel, self).__init__(opt)
-        self.jpeger = DiffJPEG(differentiable=False).cuda()  # simulate JPEG compression artifacts
-        self.usm_sharpener = USMSharp().cuda()  # do usm sharpening
+        self.jpeger = DiffJPEG(differentiable=False)  # simulate JPEG compression artifacts
+        self.usm_sharpener = USMSharp() # do usm sharpening
         self.queue_size = opt.get('queue_size', 180)
 
     @torch.no_grad()
@@ -38,9 +38,9 @@ class RealESRNetModel(SRModel):
         b, c, h, w = self.lq.size()
         if not hasattr(self, 'queue_lr'):
             assert self.queue_size % b == 0, f'queue size {self.queue_size} should be divisible by batch size {b}'
-            self.queue_lr = torch.zeros(self.queue_size, c, h, w).cuda()
+            self.queue_lr = torch.zeros(self.queue_size, c, h, w)
             _, c, h, w = self.gt.size()
-            self.queue_gt = torch.zeros(self.queue_size, c, h, w).cuda()
+            self.queue_gt = torch.zeros(self.queue_size, c, h, w)
             self.queue_ptr = 0
         if self.queue_ptr == self.queue_size:  # the pool is full
             # do dequeue and enqueue
