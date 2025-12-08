@@ -2,16 +2,22 @@ import os
 import cv2
 import torch
 import glob
+import uuid
+import numpy as np
 from flask import Flask, request, send_file, render_template, jsonify
 from werkzeug.utils import secure_filename
-
 try:
     from gfpgan import GFPGANer
 except ImportError:
     GFPGANer = None
-
 from realesrgan import RealESRGANer
 from basicsr.archs.rrdbnet_arch import RRDBNet
+try:
+    from skimage.metrics import peak_signal_noise_ratio as psnr
+    from skimage.metrics import structural_similarity as ssim
+except ImportError:
+    psnr = None
+    ssim = None
 
 # --- 初始化 Flask 应用 ---
 app = Flask(__name__)
@@ -27,6 +33,133 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 upsampler_cache = {}
 gfpgan_cache = None
+analysis_cache = {}
+
+
+def calculate_sharpness(image):
+    """计算图像清晰度（拉普拉斯方差）"""
+    if len(image.shape) == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image
+    laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+    return float(laplacian_var)
+
+
+def calculate_contrast(image):
+    """计算图像对比度（RMS对比度）"""
+    if len(image.shape) == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image
+    mean = np.mean(gray)
+    rms_contrast = np.sqrt(np.mean((gray - mean) ** 2))
+    return float(rms_contrast / 255.0)
+
+
+def calculate_noise_level(image):
+    """计算图像噪声水平（拉普拉斯噪声估计）"""
+    if len(image.shape) == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image
+
+    # 使用高斯模糊估计噪声
+    blurred = cv2.GaussianBlur(gray, (5, 5), 1.0)
+    noise = gray.astype(np.float32) - blurred.astype(np.float32)
+    noise_level = np.std(noise) / 255.0
+    return float(noise_level)
+
+
+def calculate_edge_density(image):
+    """计算边缘密度"""
+    if len(image.shape) == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image
+
+    edges = cv2.Canny(gray, 50, 150)
+    edge_density = np.sum(edges > 0) / (edges.shape[0] * edges.shape[1])
+    return float(edge_density)
+
+
+def analyze_color_distribution(image):
+    """分析色彩分布"""
+    if len(image.shape) == 3:
+        # 分别计算RGB通道的均值和标准差
+        mean_bgr = np.mean(image, axis=(0, 1))
+        std_bgr = np.std(image, axis=(0, 1))
+        brightness = float(np.mean(mean_bgr))
+        color_variance = float(np.mean(std_bgr))
+    else:
+        brightness = float(np.mean(image))
+        color_variance = 0.0
+
+    return {
+        'brightness': brightness / 255.0,
+        'color_variance': color_variance / 255.0
+    }
+
+
+def analyze_image(image, file_path=None):
+    """全面分析图像"""
+    # 获取元数据
+    height, width = image.shape[:2]
+    channels = image.shape[2] if len(image.shape) == 3 else 1
+    file_size = os.path.getsize(file_path) if file_path and os.path.exists(file_path) else 0
+
+    # 计算各项指标
+    metrics = {
+        'sharpness': calculate_sharpness(image),
+        'contrast': calculate_contrast(image),
+        'noise_level': calculate_noise_level(image),
+        'edge_density': calculate_edge_density(image)
+    }
+
+    # 添加色彩分析
+    metrics.update(analyze_color_distribution(image))
+
+    return {
+        'metadata': {
+            'width': int(width),
+            'height': int(height),
+            'channels': int(channels),
+            'file_size': int(file_size),
+            'color_space': 'BGR' if channels == 3 else 'Grayscale'
+        },
+        'metrics': metrics
+    }
+
+
+def calculate_quality_metrics(original_img, result_img):
+    """计算图像质量评估指标"""
+    if psnr is None or ssim is None:
+        return {'psnr': None, 'ssim': None}
+
+    try:
+        # 确保图像尺寸一致
+        if original_img.shape != result_img.shape:
+            result_img = cv2.resize(result_img, (original_img.shape[1], original_img.shape[0]))
+
+        # 转换为灰度图像计算SSIM
+        if len(original_img.shape) == 3:
+            orig_gray = cv2.cvtColor(original_img, cv2.COLOR_BGR2GRAY)
+            result_gray = cv2.cvtColor(result_img, cv2.COLOR_BGR2GRAY)
+        else:
+            orig_gray = original_img
+            result_gray = result_img
+
+        # 计算PSNR和SSIM
+        psnr_value = psnr(original_img, result_img, data_range=255)
+        ssim_value = ssim(orig_gray, result_gray, data_range=255)
+
+        return {
+            'psnr': float(psnr_value),
+            'ssim': float(ssim_value)
+        }
+    except Exception as e:
+        print(f"Error calculating quality metrics: {e}")
+        return {'psnr': None, 'ssim': None}
 
 
 def get_gfpganer():
@@ -94,6 +227,7 @@ def upscale_image():
     model_name = request.form.get('model', 'RealESRGAN_x4plus')
     outscale = float(request.form.get('outscale', 4))
     face_enhance = request.form.get('face_enhance') == 'true'
+    return_analysis = request.form.get('include_analysis', '').lower() == 'true'
 
     if file:
         filename = secure_filename(file.filename)
@@ -102,6 +236,9 @@ def upscale_image():
 
         img = cv2.imread(input_path, cv2.IMREAD_UNCHANGED)
         if img is None: return 'Cannot read input image', 500
+
+        # 生成请求ID
+        request_id = str(uuid.uuid4())
 
         try:
             upsampler = get_upsampler(model_name)
@@ -139,7 +276,59 @@ def upscale_image():
         output_path = os.path.join(app.config['RESULT_FOLDER'], output_filename)
         cv2.imwrite(output_path, output)
 
+        # 进行图像分析
+        original_analysis = analyze_image(img, input_path)
+        result_analysis = analyze_image(output, output_path)
+        quality_metrics = calculate_quality_metrics(img, output)
+
+        # 计算改进百分比
+        improvement = {}
+        if original_analysis['metrics']['sharpness'] > 0:
+            improvement['sharpness_gain'] = f"+{((result_analysis['metrics']['sharpness'] / original_analysis['metrics']['sharpness'] - 1) * 100):.1f}%"
+        if original_analysis['metrics']['contrast'] > 0:
+            improvement['contrast_gain'] = f"+{((result_analysis['metrics']['contrast'] / original_analysis['metrics']['contrast'] - 1) * 100):.1f}%"
+        if original_analysis['metrics']['noise_level'] > 0:
+            improvement['noise_reduction'] = f"{((result_analysis['metrics']['noise_level'] / original_analysis['metrics']['noise_level'] - 1) * 100):.1f}%"
+
+        # 构建完整分析结果
+        analysis_result = {
+            'request_id': request_id,
+            'processing_info': {
+                'model': model_name,
+                'scale_factor': outscale,
+                'face_enhance': face_enhance
+            },
+            'original': original_analysis,
+            'result': {
+                **result_analysis,
+                'quality_scores': quality_metrics
+            },
+            'improvement': improvement
+        }
+
+        # 缓存分析结果
+        analysis_cache[request_id] = analysis_result
+
+        # 总是进行分析，但根据请求类型返回不同格式
+        if return_analysis:
+            # 返回包含分析结果和图片base64的JSON
+            import base64
+            with open(output_path, 'rb') as img_file:
+                img_base64 = base64.b64encode(img_file.read()).decode('utf-8')
+
+            analysis_result['image_data'] = f"data:image/{ext.lstrip('.')};base64,{img_base64}"
+            return jsonify(analysis_result)
+
         return send_file(output_path, mimetype=f'image/{ext.lstrip(".")}')
+
+
+@app.route('/analysis/<request_id>', methods=['GET'])
+def get_analysis(request_id):
+    """获取指定请求的分析结果"""
+    if request_id in analysis_cache:
+        return jsonify(analysis_cache[request_id])
+    else:
+        return jsonify({'error': 'Analysis not found'}), 404
 
 
 if __name__ == '__main__':

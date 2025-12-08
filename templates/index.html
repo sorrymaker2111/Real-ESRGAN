@@ -145,10 +145,153 @@
 
         .hidden { display: none; }
         @keyframes progress-bar-stripes { from { background-position: 40px 0; } to { background-position: 0 0; } }
+
+        /* 分析结果样式 */
+        .analysis-panel {
+            width: 100%;
+            padding: 1.5rem;
+            border-top: 1px solid var(--border-color);
+            background: #f8f9fa;
+        }
+        .analysis-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+        .analysis-section {
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+        .analysis-section h3 {
+            margin: 0 0 1rem 0;
+            font-size: 1.1rem;
+            color: var(--text-color);
+            border-bottom: 2px solid var(--accent-color);
+            padding-bottom: 0.5rem;
+        }
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.8rem;
+            padding: 0.5rem;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        .metric-label {
+            font-weight: 500;
+            color: var(--text-color);
+        }
+        .metric-value {
+            font-weight: bold;
+            color: var(--accent-color);
+        }
+        .improvement-positive { color: #28a745; }
+        .improvement-negative { color: #dc3545; }
+        .improvement-neutral { color: #6c757d; }
+        .progress-bar-metric {
+            width: 60px;
+            height: 8px;
+            background: var(--progress-bg-color);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-left: 1rem;
+        }
+        .progress-fill {
+            height: 100%;
+            background: var(--accent-color);
+            transition: width 0.3s ease;
+        }
+
+        /* 对比模式样式 */
+        .comparison-container {
+            position: relative;
+            width: 100%;
+            height: 400px;
+            margin: 0 auto;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            background: #f0f0f0;
+        }
+        .comparison-image {
+            width: 100%;
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            object-fit: contain; /* 保持图片比例，完整显示在容器内 */
+            object-position: center center; /* 居中显示 */
+        }
+        /* 前景图样式 */
+        .comparison-image.top-layer {
+            z-index: 2;
+            clip-path: inset(0 50% 0 0); /* 初始状态：显示左半边 */
+        }
+        .comparison-slider {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: 3px;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            cursor: ew-resize;
+            z-index: 10;
+            transform: translateX(-50%);
+            border-left: 1px solid rgba(0, 0, 0, 0.3);
+            border-right: 1px solid rgba(0, 0, 0, 0.3);
+        }
+        .comparison-slider::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 40px;
+            height: 40px;
+            background: white;
+            border-radius: 50%;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+            border: 2px solid #fff;
+        }
+        .comparison-slider::after {
+            content: '◀ ▶';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 14px;
+            color: #333;
+            font-weight: bold;
+        }
+        .comparison-labels {
+            position: absolute;
+            top: 10px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 15px;
+            pointer-events: none;
+            z-index: 5;
+        }
+        .comparison-label {
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
         @media (max-width: 768px) {
             body { padding: 0.5rem; }
             .content-wrapper { flex-direction: column; }
             .image-panel:first-child { border-right: none; border-bottom: 1px solid var(--border-color); }
+            .analysis-container { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -174,6 +317,18 @@
                 <img id="resultImage" src="" alt="Upscaled Image" class="hidden">
                 <span class="text">处理结果将在此显示</span>
             </div>
+            <!-- 对比模式容器 -->
+            <div id="comparisonContainer" class="comparison-container hidden">
+                <!-- 背景层：处理后的图片 -->
+                <img id="comparisonResult" class="comparison-image" src="" alt="Result">
+                <!-- 前景层：原图 -->
+                <img id="comparisonOriginal" class="comparison-image top-layer" src="" alt="Original">
+                <div id="comparisonSlider" class="comparison-slider"></div>
+                <div class="comparison-labels">
+                    <span class="comparison-label">原图</span>
+                    <span class="comparison-label">处理后</span>
+                </div>
+            </div>
             <div class="panel-footer">
                 <a href="#" id="exportButton" class="action-button hidden" download>下载处理结果</a>
             </div>
@@ -195,6 +350,18 @@
                 人脸/头像增强 (GFPGAN)
             </label>
         </div>
+        <div class="control-group">
+            <label class="control-group-checkbox">
+                <input type="checkbox" id="analysisCheckbox" checked>
+                显示分析结果
+            </label>
+        </div>
+        <div class="control-group">
+            <label class="control-group-checkbox">
+                <input type="checkbox" id="comparisonCheckbox">
+                开启对比模式
+            </label>
+        </div>
 
         <div id="action-area">
             <div id="status-area" class="hidden">
@@ -202,6 +369,24 @@
                 <div class="progress-container"><div class="progress-bar"></div></div>
             </div>
             <button id="processButton" class="main-button" disabled>请先上传图片</button>
+        </div>
+    </div>
+
+    <!-- 分析结果面板 -->
+    <div id="analysisPanel" class="analysis-panel hidden">
+        <div class="analysis-container">
+            <div class="analysis-section">
+                <h3>图像元数据</h3>
+                <div id="metadataAnalysis"></div>
+            </div>
+            <div class="analysis-section">
+                <h3>质量评估</h3>
+                <div id="qualityAnalysis"></div>
+            </div>
+            <div class="analysis-section">
+                <h3>处理改进</h3>
+                <div id="improvementAnalysis"></div>
+            </div>
         </div>
     </div>
 </div>
@@ -223,8 +408,20 @@
         const importButton = document.getElementById('importButton');
         const exportButton = document.getElementById('exportButton');
         const fileNameDisplay = document.getElementById('fileName');
+        const analysisPanel = document.getElementById('analysisPanel');
+        const metadataAnalysis = document.getElementById('metadataAnalysis');
+        const qualityAnalysis = document.getElementById('qualityAnalysis');
+        const improvementAnalysis = document.getElementById('improvementAnalysis');
+        const analysisCheckbox = document.getElementById('analysisCheckbox');
+        const comparisonCheckbox = document.getElementById('comparisonCheckbox');
+        const comparisonContainer = document.getElementById('comparisonContainer');
+        const comparisonOriginal = document.getElementById('comparisonOriginal');
+        const comparisonResult = document.getElementById('comparisonResult');
+        const comparisonSlider = document.getElementById('comparisonSlider');
+        let comparisonSliderInitialized = false;
 
         let currentFile = null;
+        let currentRequestId = null;
 
         // ... (获取模型列表逻辑)
         fetch('/models')
@@ -259,6 +456,23 @@
         });
         processButton.addEventListener('click', handleProcess);
 
+        // 对比和分析功能事件监听
+        analysisCheckbox.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                analysisPanel.classList.remove('hidden');
+            } else {
+                analysisPanel.classList.add('hidden');
+            }
+        });
+
+        comparisonCheckbox.addEventListener('change', (e) => {
+            if (e.target.checked && originalImage.src && resultImage.src) {
+                enableComparisonMode();
+            } else {
+                disableComparisonMode();
+            }
+        });
+
         function handleFileSelect(event) {
             currentFile = event.target.files[0];
             if (currentFile) {
@@ -286,39 +500,71 @@
             statusArea.classList.remove('hidden');
             statusText.textContent = '服务器正在处理中，请稍候...';
             exportButton.classList.add('hidden');
+            analysisPanel.classList.add('hidden');
 
             const formData = new FormData();
             formData.append('file', currentFile);
             formData.append('model', modelSelect.value);
             formData.append('outscale', outscaleSlider.value);
             formData.append('face_enhance', faceEnhanceCheckbox.checked);
+            formData.append('include_analysis', 'true');  // 请求分析结果
 
             try {
                 const response = await fetch('/upscale', { method: 'POST', body: formData });
                 if (response.ok) {
-                    const imageBlob = await response.blob();
-                    const resultUrl = URL.createObjectURL(imageBlob);
+                    const contentType = response.headers.get('content-type');
 
-                    resultImage.src = resultUrl;
-                    resultImage.classList.remove('hidden');
-                    resultPlaceholder.querySelector('.text').classList.add('hidden');
+                    if (contentType && contentType.includes('application/json')) {
+                        // 返回JSON分析结果（包含图片base64）
+                        const analysisData = await response.json();
+                        displayAnalysisResults(analysisData);
+                        currentRequestId = analysisData.request_id;
 
-                    // #######################################################
-                    // ############  核心逻辑修正 (文件名) #####################
-                    // #######################################################
-                    exportButton.href = resultUrl;
+                        // 设置结果图片
+                        if (analysisData.image_data) {
+                            resultImage.src = analysisData.image_data;
+                            resultImage.classList.remove('hidden');
+                            resultPlaceholder.querySelector('.text').classList.add('hidden');
 
-                    // 1. 获取所有参数
-                    const name = currentFile.name.split('.').slice(0, -1).join('.') || 'download';
-                    const ext = currentFile.name.split('.').pop();
-                    const model = modelSelect.value;
-                    const scale = parseFloat(outscaleSlider.value).toFixed(1).replace('.', '_');
-                    const face = faceEnhanceCheckbox.checked ? '_face' : '';
+                            // 设置下载链接
+                            exportButton.href = analysisData.image_data;
+                            const name = currentFile.name.split('.').slice(0, -1).join('.') || 'download';
+                            const ext = currentFile.name.split('.').pop();
+                            const model = modelSelect.value;
+                            const scale = parseFloat(outscaleSlider.value).toFixed(1).replace('.', '_');
+                            const face = faceEnhanceCheckbox.checked ? '_face' : '';
+                            exportButton.download = `${name}_${model}_s${scale}${face}.${ext}`;
+                            exportButton.classList.remove('hidden');
+                        }
 
-                    // 2. 构造与后端一致的、信息丰富的文件名
-                    exportButton.download = `${name}_${model}_s${scale}${face}.${ext}`;
+                        statusText.textContent = '处理完成！';
+                    } else {
+                        // 传统图片返回模式
+                        const imageBlob = await response.blob();
+                        const resultUrl = URL.createObjectURL(imageBlob);
 
-                    exportButton.classList.remove('hidden');
+                        resultImage.src = resultUrl;
+                        resultImage.classList.remove('hidden');
+                        resultPlaceholder.querySelector('.text').classList.add('hidden');
+
+                        // #######################################################
+                        // ############  核心逻辑修正 (文件名) #####################
+                        // #######################################################
+                        exportButton.href = resultUrl;
+
+                        // 1. 获取所有参数
+                        const name = currentFile.name.split('.').slice(0, -1).join('.') || 'download';
+                        const ext = currentFile.name.split('.').pop();
+                        const model = modelSelect.value;
+                        const scale = parseFloat(outscaleSlider.value).toFixed(1).replace('.', '_');
+                        const face = faceEnhanceCheckbox.checked ? '_face' : '';
+
+                        // 2. 构造与后端一致的、信息丰富的文件名
+                        exportButton.download = `${name}_${model}_s${scale}${face}.${ext}`;
+
+                        exportButton.classList.remove('hidden');
+                        statusText.textContent = '处理完成！';
+                    }
                 } else {
                     const errorText = await response.text();
                     alert(`处理失败: ${errorText}`);
@@ -327,9 +573,215 @@
                 console.error('Error:', error);
                 alert('请求失败，请检查后端服务是否正常。');
             } finally {
-                statusArea.classList.add('hidden');
-                processButton.classList.remove('hidden');
+                setTimeout(() => {
+                    statusArea.classList.add('hidden');
+                    processButton.classList.remove('hidden');
+                }, 1000);
             }
+        }
+
+        function displayAnalysisResults(data) {
+            if (!data) return;
+
+            // 显示元数据
+            const originalMeta = data.original?.metadata;
+            const resultMeta = data.result?.metadata;
+
+            if (originalMeta && resultMeta) {
+                metadataAnalysis.innerHTML = `
+                    <div class="metric-row">
+                        <span class="metric-label">原始尺寸</span>
+                        <span class="metric-value">${originalMeta.width}×${originalMeta.height}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">处理后尺寸</span>
+                        <span class="metric-value">${resultMeta.width}×${resultMeta.height}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">缩放比例</span>
+                        <span class="metric-value">${(resultMeta.width/originalMeta.width).toFixed(1)}×</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">色彩空间</span>
+                        <span class="metric-value">${originalMeta.color_space}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">文件大小</span>
+                        <span class="metric-value">${(originalMeta.file_size/1024).toFixed(1)}KB</span>
+                    </div>
+                `;
+            }
+
+            // 显示质量指标
+            const qualityScores = data.result?.quality_scores;
+            const originalMetrics = data.original?.metrics;
+            const resultMetrics = data.result?.metrics;
+
+            if (qualityScores && originalMetrics && resultMetrics) {
+                qualityAnalysis.innerHTML = `
+                    <div class="metric-row">
+                        <span class="metric-label">PSNR</span>
+                        <span class="metric-value">${qualityScores.psnr ? qualityScores.psnr.toFixed(2) + 'dB' : 'N/A'}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">SSIM</span>
+                        <span class="metric-value">${qualityScores.ssim ? qualityScores.ssim.toFixed(4) : 'N/A'}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">清晰度</span>
+                        <span class="metric-value">${resultMetrics.sharpness.toFixed(1)}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">对比度</span>
+                        <span class="metric-value">${resultMetrics.contrast.toFixed(3)}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">噪声水平</span>
+                        <span class="metric-value">${resultMetrics.noise_level.toFixed(3)}</span>
+                    </div>
+                `;
+            }
+
+            // 显示改进情况
+            const improvement = data.improvement;
+            if (improvement) {
+                improvementAnalysis.innerHTML = `
+                    <div class="metric-row">
+                        <span class="metric-label">清晰度改进</span>
+                        <span class="metric-value ${improvement.sharpness_gain ? 'improvement-positive' : ''}">${improvement.sharpness_gain || 'N/A'}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">对比度改进</span>
+                        <span class="metric-value ${improvement.contrast_gain ? 'improvement-positive' : ''}">${improvement.contrast_gain || 'N/A'}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">噪声变化</span>
+                        <span class="metric-value ${improvement.noise_reduction ? improvement.noise_reduction.startsWith('-') ? 'improvement-positive' : 'improvement-negative' : ''}">${improvement.noise_reduction || 'N/A'}</span>
+                    </div>
+                    <div class="metric-row">
+                        <span class="metric-label">处理模型</span>
+                        <span class="metric-value">${data.processing_info?.model || 'N/A'}</span>
+                    </div>
+                `;
+            }
+
+            // 显示分析面板
+            if (analysisCheckbox.checked) {
+                analysisPanel.classList.remove('hidden');
+            }
+
+            // 如果对比模式开启，启用对比功能
+            if (comparisonCheckbox.checked && originalImage.src && resultImage.src) {
+                enableComparisonMode();
+            }
+        }
+
+        function enableComparisonMode() {
+            // 隐藏普通图片显示，显示对比容器
+            resultPlaceholder.classList.add('hidden');
+            comparisonContainer.classList.remove('hidden');
+
+            // 设置对比图片
+            comparisonOriginal.src = originalImage.src;  // 左侧：原图
+            comparisonResult.src = resultImage.src;      // 右侧：处理后
+
+            // 等待图片加载完成后再初始化滑块
+            Promise.all([waitForImageLoad(comparisonOriginal), waitForImageLoad(comparisonResult)])
+                .then(() => {
+                    // 清除任何可能的变换样式
+                    comparisonOriginal.style.transform = '';
+                    comparisonResult.style.transform = '';
+
+                    resetComparisonView();
+                    if (!comparisonSliderInitialized) {
+                        initComparisonSlider();
+                        comparisonSliderInitialized = true;
+                    }
+                });
+        }
+
+        function disableComparisonMode() {
+            // 显示普通图片显示，隐藏对比容器
+            resultPlaceholder.classList.remove('hidden');
+            comparisonContainer.classList.add('hidden');
+            resetComparisonView();
+        }
+
+        function waitForImageLoad(img) {
+            return new Promise(resolve => {
+                if (img.complete) {
+                    resolve();
+                    return;
+                }
+                img.onload = resolve;
+                img.onerror = resolve;
+            });
+        }
+
+        function resetComparisonView() {
+            setSliderPosition(50);
+        }
+
+        function setSliderPosition(percent) {
+            const clamped = Math.max(0, Math.min(100, percent));
+            comparisonSlider.style.left = clamped + '%';
+
+            // 使用 clip-path 裁剪掉右边的部分
+            // inset(上 右 下 左) = inset(0 50% 0 0) 裁剪掉右边的 50%
+            const clipAmount = 100 - clamped;
+            comparisonOriginal.style.clipPath = `inset(0 ${clipAmount}% 0 0)`;
+        }
+
+        function initComparisonSlider() {
+            let isDragging = false;
+
+            function getClientX(event) {
+                if (event.touches && event.touches.length) return event.touches[0].clientX;
+                if (event.changedTouches && event.changedTouches.length) return event.changedTouches[0].clientX;
+                return event.clientX;
+            }
+
+            function updateSliderPositionFromClientX(x) {
+                const rect = comparisonContainer.getBoundingClientRect();
+                const percent = ((x - rect.left) / rect.width) * 100;
+                setSliderPosition(percent);
+            }
+
+            function handleStart(e) {
+                isDragging = true;
+                document.body.style.cursor = 'ew-resize';
+                e.preventDefault();
+            }
+
+            function handleMove(e) {
+                if (!isDragging) return;
+                updateSliderPositionFromClientX(getClientX(e));
+            }
+
+            function handleEnd() {
+                isDragging = false;
+                document.body.style.cursor = 'default';
+            }
+
+            // 鼠标事件
+            comparisonSlider.addEventListener('mousedown', handleStart);
+            document.addEventListener('mousemove', handleMove);
+            document.addEventListener('mouseup', handleEnd);
+
+            // 触摸事件
+            comparisonSlider.addEventListener('touchstart', handleStart);
+            document.addEventListener('touchmove', handleMove);
+            document.addEventListener('touchend', handleEnd);
+
+            // 容器点击也可以移动分割线
+            comparisonContainer.addEventListener('click', (event) => {
+                // 避免点击滑块本身触发两次
+                if (event.target === comparisonSlider) return;
+                updateSliderPositionFromClientX(getClientX(event));
+            });
+
+            // 初始化位置（设置为50%）
+            setSliderPosition(50);
         }
     });
 </script>
